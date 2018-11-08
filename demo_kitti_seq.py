@@ -7,11 +7,13 @@ import numpy as np
 import scipy.io as sio
 import argparse
 import os
+import tqdm
+import pandas as pd
 import pdb
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--filename', type=str, default='./data/KITTI/demo_01.png', help='path to an image')
-parser.add_argument('--outputroot', type=str, default='./result/KITTI', help='output path')
+parser.add_argument('--filelist', type=str, help='file list')
+
 
 caffe.set_mode_gpu()
 caffe.set_device(0)
@@ -56,19 +58,24 @@ def depth_prediction(filename):
     return ord_score
     #ord_score = ord_score*256.0
 
+
+#------ main ---- 
+
 args = parser.parse_args()
-depth = depth_prediction(args.filename)
-depth = depth*256.0
-depth = depth.astype(np.uint16)
-img_id = args.filename.split('/')
-img_id = img_id[len(img_id)-1]
-img_id = img_id[0:len(img_id)-4]
-if not os.path.exists(args.outputroot):
-    os.makedirs(args.outputroot)
-cv2.imwrite(str(args.outputroot + '/' + img_id + '_pred.png'), depth)
 
+imglist = pd.read_csv(args.filelist) 
+N = imglist.shape[0]
 
+for i in tqdm.tqdm(range(N)):
+    fname = imglist.iloc[i,0]
+    rname = imglist.iloc[i,1]
 
+    depth = depth_prediction(fname)
+    depth = depth*256.0
+    depth = depth.astype(np.uint16)
 
-
+    folder = os.path.dirname(rname)
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    cv2.imwrite(rname, depth)
 

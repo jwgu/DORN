@@ -8,14 +8,15 @@ import scipy.io as sio
 import argparse
 import os
 import pdb
+import pandas as pd
+import tqdm
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--filename', type=str, default='./data/KITTI/demo_01.png', help='path to an image')
-parser.add_argument('--outputroot', type=str, default='./result/KITTI', help='output path')
+parser.add_argument('--filelist', type=str, help='csv file of image list')
 
 caffe.set_mode_gpu()
 caffe.set_device(0)
-net = caffe.Net('models/KITTI/deploy.prototxt', 'models/KITTI/cvpr_kitti.caffemodel', caffe.TEST)
+net = caffe.Net('models/NYUV2/deploy.prototxt', 'models/NYUV2/cvpr_nyuv2.caffemodel', caffe.TEST)
 pixel_means = np.array([[[103.0626, 115.9029, 123.1516]]])
 
 def depth_prediction(filename):
@@ -37,6 +38,9 @@ def depth_prediction(filename):
            w1 = W
 
         data = img[h0:h1, w0:w1, :]
+        #--- for nyuv2 input ---
+        data = cv2.resize(data, (353, 257), interpolation=cv2.INTER_LINEAR)
+
         data = data[None, :]
         data = data.transpose(0,3,1,2)
         blobs = {}
@@ -46,6 +50,10 @@ def depth_prediction(filename):
         net.forward(**forward_kwargs)
         pred = net.blobs['decode_ord'].data.copy()
         pred = pred[0,0,:,:]
+
+        #--- resize back for kitti ---
+        pred = cv2.resize(pred, (513, 385), interpolation=cv2.INTER_LINEAR)
+
         ord_score[h0:h1,w0:w1] = ord_score[h0:h1, w0:w1] + pred
         counts[h0:h1,w0:w1] = counts[h0:h1, w0:w1] + 1.0
 
@@ -56,19 +64,21 @@ def depth_prediction(filename):
     return ord_score
     #ord_score = ord_score*256.0
 
+
 args = parser.parse_args()
-depth = depth_prediction(args.filename)
-depth = depth*256.0
-depth = depth.astype(np.uint16)
-img_id = args.filename.split('/')
-img_id = img_id[len(img_id)-1]
-img_id = img_id[0:len(img_id)-4]
-if not os.path.exists(args.outputroot):
-    os.makedirs(args.outputroot)
-cv2.imwrite(str(args.outputroot + '/' + img_id + '_pred.png'), depth)
 
+imglist = pd.read_csv(args.filelist)
+N = imglist.shape[0]
 
+for i in tqdm.tqdm(range(N)):
+    fname = imglist.iloc[i,0]
+    rname = imglist.iloc[i,1]
 
+    depth = depth_prediction(fname) 
+    depth = depth*256.0
+    depth = depth.astype(np.uint16)
 
-
-
+    folder = os.path.dirname(rname)
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    cv2.imwrite(rname, depth)
